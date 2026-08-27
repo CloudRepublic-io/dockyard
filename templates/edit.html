@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ c.name }} &mdash; Dockyard{% endblock %}
+{% block content %}
+
+<div class="page-wrap">
+
+{% set back_href = ('/' + ('?' + list_query if list_query else '')) if from_page == 'list' else '/container/' + c.name %}
+<a class="back-link" href="{{ back_href }}">
+  &larr; back to {% if from_page == 'list' %}all containers{% else %}{{ c.name }}{% endif %}
+</a>
+
+<form class="note-form" method="post" action="/container/{{ c.name }}/edit">
+  <input type="hidden" name="from_page" value="{{ from_page }}">
+  <input type="hidden" name="list_query" value="{{ list_query }}">
+  <h1>Log entry &mdash; <span class="mono">{{ c.name }}</span></h1>
+
+  <label>Summary <span class="hint">one line &mdash; shows as the headline on the card and detail page</span></label>
+  <input type="text" name="summary" value="{{ note.summary if note else '' }}" placeholder="e.g. Media server for the family">
+
+  <label>Description <span class="hint">markdown &mdash; what is this and why does it exist? Background/context, not how-to</span></label>
+  <textarea name="description" rows="4" placeholder="Runs Plex for the household. Watches /media on the NAS. Set up because the Synology app kept crashing.">{{ note.description if note else '' }}</textarea>
+
+  <label>How to run / use it <span class="hint">markdown &mdash; blessed commands, config quirks, first-run steps</span></label>
+  <textarea name="usage_notes" rows="6" placeholder="docker compose restart plex&#10;Admin UI: http://server:32400/web">{{ note.usage_notes if note else '' }}</textarea>
+
+  <label>Debugging &amp; logs <span class="hint">markdown &mdash; where to look when it breaks</span></label>
+  <textarea name="debug_notes" rows="5" placeholder="docker logs -f plex&#10;Health check endpoint: /identity">{{ note.debug_notes if note else '' }}</textarea>
+
+  <label>Backup &amp; restore <span class="hint">markdown</span></label>
+  <textarea name="backup_notes" rows="5" placeholder="Config lives in /srv/plex/config - back up weekly with restic">{{ note.backup_notes if note else '' }}</textarea>
+
+  <label>Links <span class="hint">markdown &mdash; upstream docs, GitHub, wiki pages</span></label>
+  <textarea name="links" rows="3" placeholder="[Upstream docs](https://example.com)">{{ note.links if note else '' }}</textarea>
+
+  <label>Tags <span class="hint">comma-separated</span></label>
+  <input type="text" name="tags" value="{{ note.tags if note else '' }}" placeholder="media, lan-only, needs-gpu">
+
+  <div class="form-actions">
+    <button type="submit">Save log entry</button>
+  </div>
+</form>
+
+</div>
+
+{% endblock %}

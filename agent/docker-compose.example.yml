@@ -1,0 +1,110 @@
+# Standalone deployment for a remote server: copy this whole agent/ folder
+# there (scp/rsync/git clone - it's entirely self-contained) and:
+#
+#   cp .env.example .env    # then fill in your values
+#   docker compose up -d
+#
+# Two independent services, both optional on their own:
+#
+#   dockyard-compose-agent  Pushes this server's compose file *content* to
+#                           the central Dockyard instance on a loop. Only
+#                           needs read access to the compose directory - no
+#                           Docker socket, no write access to anything.
+#
+#   docker-socket-proxy     Only needed if you ALSO want the central Dockyard
+#                           instance to do LIVE container inspection of this
+#                           host (status, ports, labels in real time), not
+#                           just its compose files. If you only want the
+#                           agent, delete this whole service and the
+#                           "networks:" section below.
+#
+# Deploying both together (as here) is a reasonable default for a host you
+# want fully integrated - but read the security notes on docker-socket-proxy
+# below before enabling it; exposing a Docker API, even read-only, needs
+# actual thought about what can reach it.
+
+
+# IMPORTANT: this "restart: unless-stopped" config is for the normal,
+# long-running mode (PUSH_INTERVAL > 0, pushing on a loop). If you instead set
+# PUSH_INTERVAL=0 to push once and exit (e.g. triggered by an external cron job
+# or systemd timer via `docker compose run --rm dockyard-compose-agent`),
+# change this to `restart: "no"` - otherwise Docker will just keep restarting
+# the container the instant it exits, which looks like it "never stops" even
+# though the script itself is exiting correctly each time.
+services:
+  dockyard-compose-agent:
+    build: .   # or push agent/ to a registry and reference that image instead
+    restart: unless-stopped   # use "no" instead if PUSH_INTERVAL=0 (see the docs/agent-README)
+    env_file: .env
+    environment:
+      COMPOSE_DIR: "/compose"
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ${HOST_COMPOSE_DIR}:/compose:ro
+    tmpfs:
+      - /tmp
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    mem_limit: 64m
+
+  # --- Optional: only if you want live inspection of this host too ---
+  #
+  # SECURITY: this proxy's port must be reachable from wherever your central
+  # Dockyard instance runs, which usually means a different machine - so
+  # "bind to 127.0.0.1" (the proxy project's own usual advice) doesn't apply
+  # here; something needs to reach this port over the network. That said,
+  # NEVER just publish it to every interface with a bare "2375:2375" mapping.
+  # Pick one, in order of preference:
+  #
+  #   1. Best: put this host and the central Dockyard instance on a private
+  #      overlay network (Tailscale, WireGuard, ZeroTier) and bind the proxy
+  #      only to that overlay's IP. Also solves the next point for free.
+  #   2. Good: bind to this host's specific LAN IP (set PROXY_BIND_IP in
+  #      .env) and add a host firewall rule allowing port 2375 only from the
+  #      central Dockyard instance's IP, denying everyone else.
+  #   3. Minimum: at least bind to the LAN IP, not 0.0.0.0, even without a
+  #      firewall rule - this alone stops it being reachable from a
+  #      different NIC/public interface this host might also have.
+  #
+  # Also note: docker-socket-proxy has no TLS support of its own - traffic
+  # between the central instance and this proxy is plain HTTP. An overlay
+  # network (option 1) is the only one of these that also encrypts it: an
+  # SSH tunnel is another option worth considering instead of this proxy
+  # entirely, since docker-py can connect via ssh:// directly.
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.4.2   # pin a specific version - check the project's releases for the current one
+    restart: unless-stopped
+    environment:
+      CONTAINERS: "1"   # the only permission Dockyard's own code actually uses
+      POST: "0"         # block all writes (also the image's own default - explicit here on purpose)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "${PROXY_BIND_IP:-127.0.0.1}:2375:2375"   # see the security notes above before changing this
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:2375/_ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    mem_limit: 64m
+    networks:
+      - dockyard-internal
+
+networks:
+  dockyard-internal:
+

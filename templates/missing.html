@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Not found &mdash; Dockyard{% endblock %}
+{% block content %}
+<div class="empty-state">
+  <p>No container named <span class="mono">{{ name }}</span>.</p>
+  <p class="muted">It may have been removed or renamed. <a href="/">Back to the fleet &rarr;</a></p>
+</div>
+{% endblock %}

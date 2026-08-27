@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Dockyard &mdash; archive{% endblock %}
+{% block content %}
+
+<a class="back-link" href="/">&larr; back to containers</a>
+
+<h1 class="archive-heading">Archive</h1>
+<p class="muted archive-intro">Containers that were documented but no longer exist on their host &mdash; moved,
+  renamed, or removed. Their notes are kept here rather than deleted, since the information might still be useful.</p>
+
+<div class="fleet-grid">
+  {% for c in containers %}
+  <a class="plate archive-plate status-{{ c.status }}" href="/container/{{ c.name }}">
+    <div class="plate-top">
+      <span class="plate-id">{{ c.display_name or c.name }}</span>
+      {% if multi_host and c.host %}<span class="host-chip" style="background: {{ host_colors.get(c.host, '#9aa0a6') }};">{{ c.host|upper }}</span>{% endif %}
+    </div>
+    <div class="plate-image">{{ c.image }}</div>
+
+    {% if c.note and c.note.summary %}
+      <p class="plate-summary">{{ c.note.summary }}</p>
+    {% endif %}
+
+    <div class="plate-footer">
+      {% if c.note and c.note.tags %}
+      <div class="plate-tags">
+        {% for t in c.note.tags.split(',') %}{% if t.strip() %}<span class="tag">{{ t.strip() }}</span>{% endif %}{% endfor %}
+      </div>
+      {% endif %}
+      <div class="plate-footer-row">
+        <span class="plate-status-text archived-label">archived {{ c.archived_at.strftime('%Y-%m-%d') if c.archived_at else '' }}</span>
+      </div>
+    </div>
+  </a>
+  {% else %}
+  <div class="empty-state">
+    <p>Nothing archived yet.</p>
+    <p class="muted">Documented containers show up here automatically if they're ever removed, renamed, or moved off their host.</p>
+  </div>
+  {% endfor %}
+</div>
+
+{% endblock %}

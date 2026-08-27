@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Dockyard &mdash; guide{% endblock %}
+{% block content %}
+
+<a class="back-link" href="/">&larr; back to containers</a>
+
+<div class="docs-layout">
+  {% if toc %}
+  <nav class="docs-toc">
+    <div class="docs-toc-label">On this page</div>
+    {{ toc|safe }}
+  </nav>
+  {% endif %}
+
+  <div class="docs-page">
+    <div class="prose docs-prose">
+      {{ content|safe }}
+    </div>
+  </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+{% block title %}{{ c.name }} &mdash; Dockyard{% endblock %}
+{% block content %}
+
+<div class="page-wrap">
+
+<a class="back-link" href="/">&larr; all containers</a>
+
+{% if wrote %}
+<div class="flash flash-success">Labels written to <span class="mono">{{ compose_svc.compose_file if compose_svc else '' }}</span>.</div>
+{% endif %}
+{% if write_error %}
+<div class="flash flash-error">Couldn't write labels: {{ write_error }}</div>
+{% endif %}
+
+{% if is_archived %}
+<div class="flash flash-archived">
+  <span>Archived &mdash; this container no longer exists on <span class="mono">{{ c.host }}</span>.
+    Last seen {{ c.last_synced.strftime('%Y-%m-%d %H:%M') if c.last_synced else 'unknown' }}. Its notes are kept below in case they're still useful.</span>
+  <form action="/container/{{ c.name }}/delete" method="post"
+        onsubmit="return confirm('Permanently delete {{ c.display_name or c.name }} and its notes? This can\'t be undone.');">
+    <button type="submit" class="delete-btn">Delete permanently</button>
+  </form>
+</div>
+{% endif %}
+
+<div class="manifest">
+  <div class="manifest-header status-{{ c.status }}">
+    {% if is_new %}<span class="badge badge-new">NEW</span>{% endif %}
+    {% if multi_host and c.host %}
+    <span class="host-badge-lg" style="background: {{ host_colors.get(c.host, '#9aa0a6') }};">{{ c.host|upper }}</span>
+    {% endif %}
+    <div class="manifest-header-top">
+      <div class="header-title-group">
+        <span class="status-light"></span>
+        <span class="status-pill-badge status-{{ c.status }}">{{ c.status }}</span>
+        <h1>{{ c.display_name or c.name }}</h1>
+      </div>
+      <div class="header-actions-group">
+        {% if needs_docs %}
+        <span class="icon-badge warning needs-docs-icon--inline" title="Needs docs">
+          <svg viewBox="0 0 24 24">
+            <path class="warning-tri" d="M12 3L2 20h20L12 3z"/>
+            <rect class="warning-cut" x="11" y="9" width="2" height="6" rx="1"/>
+            <circle class="warning-cut" cx="12" cy="17" r="1.2"/>
+          </svg>
+        </span>
+        {% endif %}
+        {% if launch_target and launch_target.options %}
+        <div class="launch-dropdown">
+          <span class="edit-link launch-link" data-launch-trigger style="cursor: pointer;">Launch &#8599;</span>
+          <div class="launch-dropdown-panel">
+            {% for opt in launch_target.options %}
+            <span class="launch-option" data-url="{{ opt.url or '' }}" data-port="{{ opt.port or '' }}">{{ opt.label }}</span>
+            {% endfor %}
+          </div>
+        </div>
+        {% elif launch_target %}
+        <a class="edit-link launch-link" href="#"
+           onclick="event.preventDefault(); window.open({% if launch_target.url %}'{{ launch_target.url }}'{% else %}'http://' + window.location.hostname + ':{{ launch_target.port }}'{% endif %}, '_blank', 'noopener');">
+          Launch &#8599;
+        </a>
+        {% endif %}
+        <a class="edit-link" href="/container/{{ c.name }}/edit?from=detail">Edit notes</a>
+      </div>
+    </div>
+    <p class="manifest-image">{{ c.image }}</p>
+    {% if c.compose_project %}
+      <a class="stack-chip" href="/?stack={{ c.compose_project }}">stack: {{ c.compose_project }}</a>
+    {% endif %}
+    {% if note and note.summary %}<p class="manifest-summary">{{ note.summary }}</p>{% endif %}
+    {% if note and note.tags %}
+      <div class="plate-tags">
+        {% for t in note.tags.split(',') %}{% if t.strip() %}<span class="tag">{{ t.strip() }}</span>{% endif %}{% endfor %}
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="manifest-body">
+
+    <section class="cargo">
+      <h2>Runtime facts <span class="source-tag">live &middot; docker inspect</span></h2>
+      <div class="fact-grid">
+        <div class="fact-col">
+          <h3>Ports</h3>
+          {% if ports %}<ul class="mono-list">{% for p in ports %}<li>{{ p }}</li>{% endfor %}</ul>
+          {% else %}<p class="muted">None published.</p>{% endif %}
+        </div>
+        <div class="fact-col">
+          <h3>Volumes / Mounts</h3>
+          {% if volumes %}<ul class="mono-list">{% for v in volumes %}<li>{{ v }}</li>{% endfor %}</ul>
+          {% else %}<p class="muted">None.</p>{% endif %}
+        </div>
+        <div class="fact-col">
+          <h3>Networks</h3>
+          {% if networks %}
+            <ul class="mono-list">
+              {% for n in networks %}
+              <li class="net-entry">{{ n.name }}{% if n.ip %} <span class="net-ip">&mdash; {{ n.ip }}</span>{% endif %}</li>
+              {% endfor %}
+            </ul>
+          {% elif network_mode == 'host' %}
+            <p class="muted">Host networking &mdash; shares the host's network stack directly, no separate container IP.</p>
+          {% else %}
+            <p class="muted">None.</p>
+          {% endif %}
+        </div>
+        <div class="fact-col">
+          <h3>Env vars (names only)</h3>
+          {% if env_keys %}<ul class="mono-list">{% for e in env_keys %}<li>{{ e }}</li>{% endfor %}</ul>
+          {% else %}<p class="muted">None.</p>{% endif %}
+        </div>
+      </div>
+      <p class="synced-at">
+        Last synced: {{ c.last_synced }}
+        {% if host_stale %}
+        <span class="host-stale-warning" title="This host hasn't synced successfully recently - check its Docker API connectivity">
+          <svg viewBox="0 0 24 24">
+            <path class="warning-tri" d="M12 3L2 20h20L12 3z"/>
+            <rect class="warning-cut" x="11" y="9" width="2" height="6" rx="1"/>
+            <circle class="warning-cut" cx="12" cy="17" r="1.2"/>
+          </svg>
+          Not syncing
+        </span>
+        {% endif %}
+      </p>
+    </section>
+
+    {% if compose_svc %}
+    <section class="cargo">
+      <h2>Compose definition <span class="source-tag">file &middot; {{ compose_svc.compose_file }}</span></h2>
+      <div class="fact-grid">
+        <div class="fact-col">
+          <h3>Declared ports</h3>
+          {% if compose_ports %}<ul class="mono-list">{% for p in compose_ports %}<li>{{ p }}</li>{% endfor %}</ul>
+          {% else %}<p class="muted">None declared.</p>{% endif %}
+        </div>
+        <div class="fact-col">
+          <h3>Declared volumes</h3>
+          {% if compose_volumes %}<ul class="mono-list">{% for v in compose_volumes %}<li>{{ v }}</li>{% endfor %}</ul>
+          {% else %}<p class="muted">None declared.</p>{% endif %}
+        </div>
+        <div class="fact-col">
+          <h3>Depends on</h3>
+          {% if compose_depends_on %}<ul class="mono-list">{% for d in compose_depends_on %}<li>{{ d }}</li>{% endfor %}</ul>
+          {% else %}<p class="muted">Nothing declared.</p>{% endif %}
+        </div>
+      </div>
+
+      <div class="write-back">
+        {% if not compose_file_reachable %}
+        <p class="muted small">Write-back isn't available for this service - Dockyard doesn't have direct
+          filesystem access to <span class="mono">{{ compose_svc.compose_file }}</span>. This is expected for
+          hosts using the compose-push agent, since it only ever sends compose <em>content</em> to Dockyard, not
+          a shared filesystem path Dockyard could write back to. To enable write-back for this host, mount its
+          compose directory into Dockyard directly (e.g. NFS/SMB) instead of relying on the agent.</p>
+        {% elif compose_write_enabled %}
+        <form action="/container/{{ c.name }}/write-labels" method="post" id="write-labels-form">
+          <div class="write-back-options">
+            <label class="checkbox-row">
+              <input type="checkbox" name="write_dockyard" value="1" checked>
+              <span>Dockyard labels (<span class="mono">dockyard.summary</span> / <span class="mono">.tags</span> / <span class="mono">.docs</span>)</span>
+            </label>
+            <label class="checkbox-row">
+              <input type="checkbox" name="write_oci" value="1" checked>
+              <span>OCI annotations (<span class="mono">org.opencontainers.image.description</span> / <span class="mono">.documentation</span>)</span>
+            </label>
+          </div>
+          <button type="submit" class="write-back-btn" {% if not note or not (note.summary or note.tags) %}disabled{% endif %}>
+            Write to this compose file
+          </button>
+        </form>
+        <p class="muted small">Writes whichever label set(s) you check above to the <span class="mono">{{ compose_svc.service_name }}</span> service.
+          A one-time backup is kept alongside the file (<span class="mono">{{ compose_svc.compose_file }}.dockyard-bak</span>). Unchecking a set here
+          doesn't remove labels it wrote on an earlier run - it just skips writing that set this time.</p>
+        {% else %}
+        <p class="muted small">Writing notes back to this compose file is disabled. Set
+          <span class="mono">DOCKYARD_ALLOW_COMPOSE_WRITE=true</span> and mount the compose directory read-write to enable it.</p>
+        {% endif %}
+      </div>
+    </section>
+    {% endif %}
+
+    {% if traefik_routers %}
+    <section class="cargo">
+      <h2>Reverse proxy <span class="source-tag">Traefik labels{% if not traefik_enabled %} &middot; traefik.enable not set{% endif %}</span></h2>
+      <div class="traefik-routers">
+        {% for r in traefik_routers %}
+        <div class="traefik-router">
+          <h3>{{ r.name }}{% if r.tls %}<span class="tls-badge">TLS</span>{% endif %}</h3>
+          <dl class="publisher-docs">
+            {% if r.rule %}<dt>Rule</dt><dd class="mono">{{ r.rule }}</dd>{% endif %}
+            {% if r.entrypoints %}<dt>Entrypoints</dt><dd class="mono">{{ r.entrypoints }}</dd>{% endif %}
+            {% if r.port %}<dt>Backend port</dt><dd class="mono">{{ r.port }}</dd>{% endif %}
+            {% if r.cert_resolver %}<dt>Cert resolver</dt><dd class="mono">{{ r.cert_resolver }}</dd>{% endif %}
+            {% if r.middlewares %}<dt>Middlewares</dt><dd class="mono">{{ r.middlewares }}</dd>{% endif %}
+          </dl>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    {% if publisher_docs %}
+    <section class="cargo">
+      <h2>Publisher-provided docs <span class="source-tag">image labels &middot; OCI / Label Schema / dockyard.*</span></h2>
+      <dl class="publisher-docs">
+        {% for k, v in publisher_docs.items() %}
+        <dt>{{ k }}</dt>
+        <dd>{% if v.startswith('http') %}<a href="{{ v }}" target="_blank" rel="noopener">{{ v }}</a>{% else %}<span class="mono">{{ v }}</span>{% endif %}</dd>
+        {% endfor %}
+      </dl>
+    </section>
+    {% endif %}
+
+    <section class="log">
+      <h2>Ship's log <span class="source-tag">written by you</span></h2>
+
+      {% if note and (note.description or note.usage_notes or note.debug_notes or note.backup_notes or note.links) %}
+        {% if note.description %}
+        <div class="log-entry">
+          <h3>What is this</h3>
+          <div class="prose">{{ note.description|markdown|safe }}</div>
+        </div>
+        {% endif %}
+        {% if note.usage_notes %}
+        <div class="log-entry">
+          <h3>How to run / use it</h3>
+          <div class="prose">{{ note.usage_notes|markdown|safe }}</div>
+        </div>
+        {% endif %}
+        {% if note.debug_notes %}
+        <div class="log-entry">
+          <h3>Debugging &amp; logs</h3>
+          <div class="prose">{{ note.debug_notes|markdown|safe }}</div>
+        </div>
+        {% endif %}
+        {% if note.backup_notes %}
+        <div class="log-entry">
+          <h3>Backup &amp; restore</h3>
+          <div class="prose">{{ note.backup_notes|markdown|safe }}</div>
+        </div>
+        {% endif %}
+        {% if note.links %}
+        <div class="log-entry">
+          <h3>Links</h3>
+          <div class="prose">{{ note.links|markdown|safe }}</div>
+        </div>
+        {% endif %}
+      {% else %}
+        <p class="muted">Nothing logged yet. <a href="/container/{{ c.name }}/edit">Write the first entry &rarr;</a></p>
+      {% endif %}
+    </section>
+
+  </div>
+</div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+{% if compose_write_enabled and compose_svc and compose_file_reachable %}
+<script>
+(function () {
+  var form = document.getElementById('write-labels-form');
+  if (!form) return;
+  form.addEventListener('submit', function (e) {
+    var dk = form.write_dockyard.checked;
+    var oci = form.write_oci.checked;
+    if (!dk && !oci) {
+      e.preventDefault();
+      alert('Select at least one label set to write.');
+      return;
+    }
+    var parts = [];
+    if (dk) parts.push('dockyard.* labels');
+    if (oci) parts.push('OCI annotations');
+    var msg = 'Write ' + parts.join(' and ') + ' to {{ compose_svc.compose_file }}?\n\n' +
+      'This updates the \'{{ compose_svc.service_name }}\' service, overwriting any previous values for just those keys. ' +
+      'A one-time backup (.dockyard-bak) is kept if this is the first write.';
+    if (!confirm(msg)) {
+      e.preventDefault();
+    }
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

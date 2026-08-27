@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block title %}Dockyard &mdash; containers{% endblock %}
+{% block content %}
+
+<div class="dash-layout">
+  <nav class="dash-sidebar" id="dash-sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Status</div>
+      <label class="sidebar-pill{% if 'running' in status %} active{% endif %}">
+        <input type="checkbox" name="status" value="running" {% if 'running' in status %}checked{% endif %}>
+        <span class="pill-dot status-running"></span>
+        <span>Running</span>
+      </label>
+      <label class="sidebar-pill{% if 'exited' in status %} active{% endif %}">
+        <input type="checkbox" name="status" value="exited" {% if 'exited' in status %}checked{% endif %}>
+        <span class="pill-dot status-exited"></span>
+        <span>Stopped</span>
+      </label>
+      <label class="sidebar-pill{% if 'paused' in status %} active{% endif %}">
+        <input type="checkbox" name="status" value="paused" {% if 'paused' in status %}checked{% endif %}>
+        <span class="pill-dot status-paused"></span>
+        <span>Paused</span>
+      </label>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Flags</div>
+      <label class="sidebar-pill{% if 'new' in flag %} active{% endif %}">
+        <input type="checkbox" name="flag" value="new" {% if 'new' in flag %}checked{% endif %}>
+        <span class="pill-dot flag-new"></span>
+        <span>New</span>
+      </label>
+      <label class="sidebar-pill{% if 'needs_docs' in flag %} active{% endif %}">
+        <input type="checkbox" name="flag" value="needs_docs" {% if 'needs_docs' in flag %}checked{% endif %}>
+        <span class="pill-dot flag-needs-docs"></span>
+        <span>Needs docs</span>
+      </label>
+    </div>
+
+    {% if all_stacks %}
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Stacks</div>
+      <div class="sidebar-dropdown">
+        <button class="sidebar-dropdown-trigger" id="stacks-trigger" type="button" aria-haspopup="true" aria-expanded="false">
+          <span id="stacks-trigger-label">All stacks</span>
+          <span class="dropdown-caret">&#9662;</span>
+        </button>
+        <div class="sidebar-dropdown-panel" id="stacks-panel">
+          {% for s in all_stacks %}
+          <label class="sidebar-pill{% if s in stack %} active{% endif %}">
+            <input type="checkbox" name="stack" value="{{ s }}" {% if s in stack %}checked{% endif %}>
+            <span>{{ s }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </nav>
+
+  <div class="dash-main">
+    <div class="fleet-grid-wrap">
+      <div class="fleet-grid" id="fleet-grid">
+        {% include "_container_grid.html" %}
+      </div>
+      <div class="grid-loading-overlay" id="grid-loading" aria-hidden="true">
+        <div class="spinner"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var form = document.getElementById('filter-form');
+  var searchInput = document.getElementById('search-input');
+  var clearBtn = document.getElementById('search-clear');
+  var sidebar = document.getElementById('dash-sidebar');
+  var hostSelect = document.getElementById('host-select');
+  var grid = document.getElementById('fleet-grid');
+  var loadingOverlay = document.getElementById('grid-loading');
+  var stacksTrigger = document.getElementById('stacks-trigger');
+  var stacksPanel = document.getElementById('stacks-panel');
+  var stacksTriggerLabel = document.getElementById('stacks-trigger-label');
+  if (!sidebar || !grid) return;
+
+  var debounceTimer = null;
+  var requestToken = 0;
+  var loadingShowTimer = null;
+
+  function currentParams() {
+    var params = new URLSearchParams();
+    if (searchInput.value.trim()) params.set('q', searchInput.value.trim());
+    sidebar.querySelectorAll('input[type=checkbox]:checked').forEach(function (cb) {
+      params.append(cb.name, cb.value);
+    });
+    if (hostSelect && hostSelect.value) params.set('host', hostSelect.value);
+    return params;
+  }
+
+  function rememberCurrentQuery(params) {
+    try { sessionStorage.setItem('dockyard-last-index-query', params.toString()); } catch (e) { /* ignore */ }
+  }
+
+  function updateClearButton() {
+    clearBtn.classList.toggle('visible', searchInput.value.length > 0);
+  }
+
+  function updatePillStyles() {
+    sidebar.querySelectorAll('.sidebar-pill').forEach(function (label) {
+      var cb = label.querySelector('input[type=checkbox]');
+      label.classList.toggle('active', cb.checked);
+    });
+  }
+
+  function updateStacksLabel() {
+    if (!stacksPanel || !stacksTriggerLabel) return;
+    var checked = stacksPanel.querySelectorAll('input[type=checkbox]:checked');
+    if (checked.length === 0) {
+      stacksTriggerLabel.textContent = 'All stacks';
+    } else if (checked.length === 1) {
+      stacksTriggerLabel.textContent = checked[0].value;
+    } else {
+      stacksTriggerLabel.textContent = checked.length + ' stacks selected';
+    }
+  }
+
+  function showLoading() {
+    if (!loadingOverlay) return;
+    // Small delay before showing, so quick responses don't cause a flash.
+    clearTimeout(loadingShowTimer);
+    loadingShowTimer = setTimeout(function () {
+      loadingOverlay.classList.add('visible');
+    }, 200);
+  }
+
+  function hideLoading() {
+    if (!loadingOverlay) return;
+    clearTimeout(loadingShowTimer);
+    loadingOverlay.classList.remove('visible');
+  }
+
+  function refresh() {
+    updateClearButton();
+    updatePillStyles();
+    updateStacksLabel();
+    var params = currentParams();
+    rememberCurrentQuery(params);
+    var myToken = ++requestToken;
+    showLoading();
+    fetch('/partials/containers?' + params.toString())
+      .then(function (r) { return r.text(); })
+      .then(function (html) {
+        if (myToken !== requestToken) return; // a newer request has since superseded this one
+        grid.innerHTML = html;
+        var url = new URL(window.location);
+        url.search = params.toString();
+        window.history.replaceState({}, '', url);
+      })
+      .catch(function () { /* leave the current grid as-is on network error */ })
+      .finally(function () {
+        if (myToken === requestToken) hideLoading();
+      });
+  }
+
+  searchInput.addEventListener('input', function () {
+    updateClearButton();
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(refresh, 250);
+  });
+
+  clearBtn.addEventListener('click', function () {
+    searchInput.value = '';
+    refresh();
+    searchInput.focus();
+  });
+
+  sidebar.querySelectorAll('input[type=checkbox]').forEach(function (cb) {
+    cb.addEventListener('change', refresh);
+  });
+
+  if (hostSelect) {
+    hostSelect.addEventListener('change', refresh);
+  }
+
+  if (form) {
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      refresh();
+    });
+  }
+
+  if (stacksTrigger && stacksPanel) {
+    stacksTrigger.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var isOpen = stacksPanel.classList.toggle('open');
+      stacksTrigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    });
+    document.addEventListener('click', function (e) {
+      if (!stacksPanel.contains(e.target) && e.target !== stacksTrigger) {
+        stacksPanel.classList.remove('open');
+        stacksTrigger.setAttribute('aria-expanded', 'false');
+      }
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        stacksPanel.classList.remove('open');
+        stacksTrigger.setAttribute('aria-expanded', 'false');
+      }
+    });
+  }
+
+  updateClearButton();
+  updatePillStyles();
+  updateStacksLabel();
+  rememberCurrentQuery(currentParams());
+})();
+</script>
+{% endblock %}

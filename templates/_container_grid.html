@@ -1,0 +1,86 @@
+{% for c in containers %}
+{% if loop.first or c.host != loop.previtem.host %}
+<div class="host-group-header">
+  <span class="host-badge" style="background: {{ host_colors.get(c.host, '#9aa0a6') }};">{{ (c.host or 'local')|upper }}</span>
+  {% if host_sync_status.get(c.host, {}).get('stale') %}
+  <span class="host-stale-warning" title="This host hasn't synced successfully recently{% if host_sync_status[c.host].last_synced %} (last synced {{ host_sync_status[c.host].last_synced.strftime('%Y-%m-%d %H:%M') }} UTC){% endif %} - check its Docker API connectivity">
+    <svg viewBox="0 0 24 24">
+      <path class="warning-tri" d="M12 3L2 20h20L12 3z"/>
+      <rect class="warning-cut" x="11" y="9" width="2" height="6" rx="1"/>
+      <circle class="warning-cut" cx="12" cy="17" r="1.2"/>
+    </svg>
+    Not syncing
+  </span>
+  {% endif %}
+</div>
+{% endif %}
+<a class="plate status-{{ c.status }}" href="/container/{{ c.name }}">
+  {% if flags[c.name].is_new %}<span class="badge badge-new">NEW</span>{% endif %}
+
+  <div class="plate-header-row">
+    <div class="plate-top">
+      <span class="status-light" title="{{ c.status }}"></span>
+      <span class="plate-id">{{ c.display_name or c.name }}</span>
+    </div>
+
+    <div class="card-icon-row">
+      {% set launch = launch_targets.get(c.name) %}
+      {% if launch and launch.options %}
+      <div class="launch-dropdown">
+        <span class="icon-badge launch-action" title="Choose a port to open" data-launch-trigger>
+          <svg viewBox="0 0 24 24"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 5.41V9h2V3h-7z"/></svg>
+        </span>
+        <div class="launch-dropdown-panel">
+          {% for opt in launch.options %}
+          <span class="launch-option" data-url="{{ opt.url or '' }}" data-port="{{ opt.port or '' }}">{{ opt.label }}</span>
+          {% endfor %}
+        </div>
+      </div>
+      {% elif launch %}
+      <span class="icon-badge launch-action" title="Open in a new tab"
+            onclick="event.preventDefault(); event.stopPropagation(); window.open({% if launch.url %}'{{ launch.url }}'{% else %}'http://' + window.location.hostname + ':{{ launch.port }}'{% endif %}, '_blank', 'noopener');">
+        <svg viewBox="0 0 24 24"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 5.41V9h2V3h-7z"/></svg>
+      </span>
+      {% endif %}
+      {% if flags[c.name].needs_docs %}
+      <span class="icon-badge warning" title="Needs docs">
+        <svg viewBox="0 0 24 24">
+          <path class="warning-tri" d="M12 3L2 20h20L12 3z"/>
+          <rect class="warning-cut" x="11" y="9" width="2" height="6" rx="1"/>
+          <circle class="warning-cut" cx="12" cy="17" r="1.2"/>
+        </svg>
+      </span>
+      {% endif %}
+      <span class="icon-badge edit-action" title="Edit notes"
+            onclick="event.preventDefault(); event.stopPropagation(); window.location='/container/{{ c.name }}/edit?from=list&list_query=' + encodeURIComponent(window.location.search.slice(1));">
+        <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+      </span>
+    </div>
+  </div>
+
+  <div class="plate-image">{{ c.image }}</div>
+
+  {% if c.note and c.note.summary %}
+    <p class="plate-summary">{{ c.note.summary }}</p>
+  {% else %}
+    <p class="plate-summary placeholder">No notes yet &mdash; click to document this one.</p>
+  {% endif %}
+
+  <div class="plate-footer">
+    {% if c.note and c.note.tags %}
+    <div class="plate-tags">
+      {% for t in c.note.tags.split(',') %}{% if t.strip() %}<span class="tag">{{ t.strip() }}</span>{% endif %}{% endfor %}
+    </div>
+    {% endif %}
+    <div class="plate-footer-row">
+      <span class="plate-status-text">{{ c.status }}</span>
+      {% if c.compose_project %}<span class="stack-chip" onclick="event.preventDefault(); event.stopPropagation(); window.location='/?stack=' + encodeURIComponent('{{ c.compose_project }}');">{{ c.compose_project }}</span>{% endif %}
+    </div>
+  </div>
+</a>
+{% else %}
+<div class="empty-state">
+  <p>No containers found.</p>
+  <p class="muted">Hit <strong>Sync</strong> above, or check that <code>/var/run/docker.sock</code> is mounted into Dockyard.</p>
+</div>
+{% endfor %}
