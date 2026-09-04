@@ -35,6 +35,18 @@ services:
   dockyard-compose-agent:
     build: .   # or push agent/ to a registry and reference that image instead
     restart: unless-stopped   # use "no" instead if PUSH_INTERVAL=0 (see the docs/agent-README)
+    # Self-documentation: if this host is also watched live by the central
+    # Dockyard instance (via the docker-socket-proxy service below), this
+    # container shows up there like any other - these labels describe it
+    # automatically rather than leaving it undocumented. List-format labels
+    # need "key=value" (an = sign) - "key: value" (a colon) silently
+    # produces a useless, empty-valued label instead, with no error at all.
+    labels:
+      - "org.opencontainers.image.title=Dockyard compose-push agent"
+      - "org.opencontainers.image.description=Pushes this host's compose file content to a central Dockyard instance on a loop - read-only access to the compose directory only, no Docker socket."
+      - "org.opencontainers.image.documentation=https://github.com/CloudRepublic-io/dockyard/tree/main/agent"
+      - "org.label-schema.usage=Configured via the .env file in this same folder - see agent/README.md alongside it for the full walkthrough and troubleshooting."
+      - "dockyard.tags=meta,infrastructure,agent"
     env_file: .env
     environment:
       COMPOSE_DIR: "/compose"
@@ -82,6 +94,12 @@ services:
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy:v0.4.2   # pin a specific version - check the project's releases for the current one
     restart: unless-stopped
+    labels:
+      - "org.opencontainers.image.title=Docker socket proxy (read-only)"
+      - "org.opencontainers.image.description=Restricts Docker API access to read-only container inspection - lets the central Dockyard instance see this host's live container status without exposing the raw Docker socket."
+      - "org.opencontainers.image.documentation=https://github.com/Tecnativa/docker-socket-proxy"
+      - "org.label-schema.usage=No direct interaction needed - only the central Dockyard instance should ever connect to this. See the security notes above this service in docker-compose.yml before changing its network exposure."
+      - "dockyard.tags=meta,infrastructure,proxy"
     environment:
       CONTAINERS: "1"   # the only permission Dockyard's own code actually uses
       POST: "0"         # block all writes (also the image's own default - explicit here on purpose)
