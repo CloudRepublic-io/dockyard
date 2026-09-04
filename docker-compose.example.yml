@@ -35,11 +35,11 @@ services:
       # - "traefik.http.routers.dockyard-https.entrypoints=websecure"
       # - "traefik.http.routers.dockyard-https.rule=Host(`dockyard.<YOUR_DOMAIN>`)"
       # - "traefik.docker.network=frontend"
-      - "org.opencontainers.image.title: Dockyard"
-      - "org.opencontainers.image.description: Documentation dashboard for this server's Docker containers - auto-pulls facts from the Docker API and compose files; notes are yours to write."
-      - "org.opencontainers.image.documentation: http://localhost:8088/guide"
-      - "org.label-schema.usage: Open the Guide page in the Dockyard UI, or run: docker compose logs dockyard"
-      - "dockyard.tags: meta,infrastructure"
+      - "org.opencontainers.image.title= Dockyard"
+      - "org.opencontainers.image.description= Documentation dashboard for this server's Docker containers - auto-pulls facts from the Docker API and compose files; notes are yours to write."
+      - "org.opencontainers.image.documentation= http://localhost:8088/guide"
+      - "org.label-schema.usage= Open the Guide page in the Dockyard UI, or run= docker compose logs dockyard"
+      - "dockyard.tags= meta,infrastructure"
     environment:
       DOCKER_HOST: tcp://docker-socket-proxy:2375
       DOCKYARD_COMPOSE_DIR: /compose
