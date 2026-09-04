@@ -36,11 +36,29 @@ NEW_WINDOW = timedelta(hours=24)
 
 async def _background_sync_loop():
     while True:
-        await asyncio.sleep(SYNC_INTERVAL_SECONDS)
         try:
+            await asyncio.sleep(SYNC_INTERVAL_SECONDS)
             await asyncio.to_thread(run_full_sync)
+        except asyncio.CancelledError:
+            raise  # let real shutdown/cancellation through, don't swallow it
         except Exception:
-            logger.exception("Background sync failed")
+            logger.exception("Background sync failed - will retry next interval")
+
+
+def _log_if_sync_loop_died(task: asyncio.Task):
+    """Should never fire given the loop above catches everything but
+    cancellation - but if it somehow does (a BaseException we didn't
+    anticipate), this is the difference between a loud, findable log line and
+    background syncing silently stopping forever with no indication why."""
+    if task.cancelled():
+        return  # normal shutdown, not a failure
+    exc = task.exception()
+    if exc is not None:
+        logger.error(
+            "CRITICAL: the background sync loop has died and will NOT restart "
+            "on its own - background syncing has stopped completely until "
+            "Dockyard itself is restarted. Underlying error: %r", exc
+        )
 
 
 @asynccontextmanager
@@ -52,6 +70,7 @@ async def lifespan(app: FastAPI):
         logger.exception("Initial sync failed")
 
     task = asyncio.create_task(_background_sync_loop())
+    task.add_done_callback(_log_if_sync_loop_died)
     start_event_listener()  # live updates: new/stopped containers show up immediately
     yield
     task.cancel()

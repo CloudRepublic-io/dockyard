@@ -185,6 +185,14 @@ def sync_docker_host(host_cfg: dict) -> int:
                 row.labels_json = json.dumps(labels)
                 row.compose_project = labels.get("com.docker.compose.project")
                 row.compose_service = labels.get("com.docker.compose.service")
+                # Explicit, not left to onupdate: SQLAlchemy skips issuing an
+                # UPDATE at all when every assigned value is identical to
+                # what's already stored (a container sitting stably with
+                # nothing changing) - which means onupdate never fires either,
+                # and last_synced would stay frozen even though this sync
+                # genuinely just confirmed the data is current. now_utc() is
+                # always a fresh value, so this always registers as a change.
+                row.last_synced = now_utc()
                 count += 1
             except Exception:
                 logger.exception("[%s] Failed to process container '%s' - skipping it this pass", host_name, bare_name)
